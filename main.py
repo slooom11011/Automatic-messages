@@ -6,10 +6,8 @@ import random
 import os
 from datetime import datetime
 import pytz
-from dotenv import load_dotenv
 
-load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.environ['TOKEN']  # يقرأ من متغير TOKEN في Railway
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -56,7 +54,7 @@ async def on_ready():
 @tasks.loop(minutes=1)
 async def check_time():
     global config
-    config = load_config()  # يحدث الكونفق كل دقيقة
+    config = load_config()  # يحدث الكونفق كل دقيقة تلقائياً
     tz = pytz.timezone('Asia/Riyadh')
     now = datetime.now(tz).strftime('%H:%M')
     
@@ -97,7 +95,6 @@ async def قسم_جديد(interaction: discord.Interaction, اسم: str, روم:
     
     save_config(config)
     
-    # انشاء ملف القسم لو مو موجود
     if not os.path.exists('data'):
         os.makedirs('data')
     if not os.path.exists(f'data/{اسم}.txt'):

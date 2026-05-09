@@ -17,7 +17,8 @@
       "file": "data/ديني.txt",
       "mentions": "none",
       "button_label": "تفاعل ❤️",
-      "color": "#00FF00"
+      "color": "#00FF00",
+      "title": "🌅 رسالة الفجر"
     },
     "خواطر": {
       "channel_id": 1502663820202479796,
@@ -25,7 +26,8 @@
       "file": "data/خواطر.txt",
       "mentions": "none", 
       "button_label": "تفاعل ❤️",
-      "color": "#3498DB"
+      "color": "#3498DB",
+      "title": "☀️ خاطرة الصباح"
     }
   }
 }

@@ -1,139 +1,173 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import json, random, pytz, os
-from datetime import datetime, time
+import json
+import random
+import os
+from datetime import datetime
+import pytz
+from dotenv import load_dotenv
 
-TOKEN = os.getenv("TOKEN")
-SAUDI = pytz.timezone('Asia/Riyadh')
-CONFIG_PATH = "config.json"
-DATA_PATH = "data"
-
-def load_config():
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def save_config(data):
-    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def get_quote(section):
-    path = f"{DATA_PATH}/{section}.txt"
-    if not os.path.exists(path): return None
-    with open(path, 'r', encoding='utf-8') as f:
-        lines = [line.strip() for line in f if line.strip()]
-    if not lines: return None
-    config = load_config()
-    used = config["الاقسام"][section].get("المستخدم", [])
-    available = [q for q in lines if q not in used]
-    if not available:
-        available = lines
-        config["الاقسام"][section]["المستخدم"] = []
-    chosen = random.choice(available)
-    config["الاقسام"][section]["المستخدم"].append(chosen)
-    if len(config["الاقسام"][section]["المستخدم"]) > config["اعدادات_عامة"]["عدد_التذكر"]:
-        config["الاقسام"][section]["المستخدم"].pop(0)
-    save_config(config)
-    return chosen
-
-class LoveButton(discord.ui.View):
-    def __init__(self, section):
-        super().__init__(timeout=None)
-        self.section = section
-
-    @discord.ui.button(label="❤️", style=discord.ButtonStyle.red, custom_id="love_btn")
-    async def love(self, interaction: discord.Interaction, button: discord.ui.Button):
-        config = load_config()
-        config["احصائيات"]["التفاعلات"][self.section] = config["احصائيات"]["التفاعلات"].get(self.section, 0) + 1
-        save_config(config)
-        await interaction.response.send_message("شكراً لتفاعلك ❤️", ephemeral=True)
+load_dotenv()
+TOKEN = os.getenv('DISCORD_TOKEN')
 
 intents = discord.Intents.default()
-intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+def load_config():
+    try:
+        with open('config.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {"الاقسام": {}, "تفعيل_زر_التفاعل": True}
+
+def save_config(config):
+    with open('config.json', 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+config = load_config()
+
+def get_messages(section_name):
+    try:
+        with open(f'data/{section_name}.txt', 'r', encoding='utf-8') as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            return lines
+    except:
+        return []
+
+class ReactButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="❤️", style=discord.ButtonStyle.secondary)
+    async def react(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("تم ❤️", ephemeral=True)
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
-    await bot.tree.sync()
-    daily_sender.start()
-
-async def send_section(section):
-    config = load_config()
-    data = config["الاقسام"][section]
-    if not data["مفعل"]: return
-    channel = bot.get_channel(int(data["روم"]))
-    if not channel: return
-    quote = get_quote(section)
-    if not quote: return
-
-    embed = discord.Embed(description=f"**{quote}**", color=int(data["لون"].replace("#",""), 16))
-    embed.set_author(name=data["عنوان"])
-    if data.get("صورة"): embed.set_image(url=data["صورة"])
-    num = config["احصائيات"]["اجمالي_المرسل"].get(section, 0) + 1
-    embed.set_footer(text=f"الرسالة رقم {num}")
-    config["احصائيات"]["اجمالي_المرسل"][section] = num
-    save_config(config)
-
-    view = LoveButton(section) if config["اعدادات_عامة"]["تفعيل_زر_التفاعل"] else None
-    await channel.send(embed=embed, view=view)
+    print(f'{bot.user} اشتغل!')
+    try:
+        synced = await bot.tree.sync()
+        print(f'تم مزامنة {len(synced)} أمر')
+    except Exception as e:
+        print(e)
+    check_time.start()
 
 @tasks.loop(minutes=1)
-async def daily_sender():
-    now = datetime.now(SAUDI)
-    today = now.strftime("%A")
-    config = load_config()
-    if today in config["اعدادات_عامة"]["ايام_الصمت"]: return
-    for section, data in config["الاقسام"].items():
-        if data["مفعل"] and now.strftime("%H:%M") == data["وقت"]:
-            await send_section(section)
+async def check_time():
+    global config
+    config = load_config()  # يحدث الكونفق كل دقيقة
+    tz = pytz.timezone('Asia/Riyadh')
+    now = datetime.now(tz).strftime('%H:%M')
+    
+    for section_name, section_data in config['الاقسام'].items():
+        if section_data['time'] == now:
+            messages = get_messages(section_name)
+            if messages:
+                channel = bot.get_channel(section_data['channel_id'])
+                if channel:
+                    msg = random.choice(messages)
+                    color = int(str(section_data['color']).replace('#', ''), 16)
+                    embed = discord.Embed(
+                        title=section_data['title'],
+                        description=msg,
+                        color=color
+                    )
+                    embed.set_footer(text=f"Automatic messages  •  اليوم الساعة {now}")
+                    
+                    view = ReactButton() if config['تفعيل_زر_التفاعل'] else None
+                    await channel.send(embed=embed, view=view)
 
-@bot.tree.command(name="قسم-جديد", description="إنشاء قسم جديد للإرسال اليومي")
-@app_commands.describe(اسم="اسم القسم", روم="ايدي الروم", وقت="HH:MM بتوقيت الرياض", لون="كود اللون #hex", عنوان="عنوان الايمبيد")
-async def new_section(interaction: discord.Interaction, اسم: str, روم: str, وقت: str, لون: str = "#3498db", عنوان: str = "رسالة اليوم"):
+@bot.tree.command(name="قسم-جديد", description="إضافة قسم جديد")
+@app_commands.describe(اسم="اسم القسم", روم="ايدي الروم", وقت="وقت الارسال 24 ساعة مثل 08:00", لون="كود اللون مثل #3498db", عنوان="عنوان الايمبيد")
+async def قسم_جديد(interaction: discord.Interaction, اسم: str, روم: str, وقت: str, لون: str, عنوان: str):
+    global config
     config = load_config()
-    if اسم in config["الاقسام"]:
-        return await interaction.response.send_message("القسم موجود مسبقاً", ephemeral=True)
-    try:
-        datetime.strptime(وقت, "%H:%M")
-        int(روم)
-    except:
-        return await interaction.response.send_message("تأكد من صيغة الوقت HH:MM وايدي الروم", ephemeral=True)
-
-    config["الاقسام"][اسم] = {"روم": روم, "وقت": وقت, "لون": لون, "عنوان": عنوان, "صورة": "", "مفعل": True, "المستخدم": []}
-    config["احصائيات"]["اجمالي_المرسل"][اسم] = 0
-    config["احصائيات"]["التفاعلات"][اسم] = 0
+    
+    if اسم in config['الاقسام']:
+        await interaction.response.send_message("القسم موجود مسبقاً!", ephemeral=True)
+        return
+    
+    config['الاقسام'][اسم] = {
+        "channel_id": int(روم),
+        "time": وقت,
+        "color": لون.replace('#', ''),
+        "title": عنوان
+    }
+    
     save_config(config)
-    with open(f"{DATA_PATH}/{اسم}.txt", 'w', encoding='utf-8'): pass
-    await interaction.response.send_message(f"تم إنشاء قسم {اسم} ✅ ارفع ملف {اسم}.txt في مجلد data وضيف المحتوى", ephemeral=True)
+    
+    # انشاء ملف القسم لو مو موجود
+    if not os.path.exists('data'):
+        os.makedirs('data')
+    if not os.path.exists(f'data/{اسم}.txt'):
+        with open(f'data/{اسم}.txt', 'w', encoding='utf-8') as f:
+            f.write(f"رسالة تجريبية لقسم {اسم}")
+    
+    await interaction.response.send_message(f"تم إنشاء قسم {اسم} على الساعة {وقت} ✅\nضيف الرسائل في `data/{اسم}.txt`", ephemeral=True)
 
-@bot.tree.command(name="الاقسام", description="عرض كل الأقسام المضافة")
-async def list_sections(interaction: discord.Interaction):
+@bot.tree.command(name="حذف-قسم", description="حذف قسم")
+@app_commands.describe(اسم="اسم القسم")
+async def حذف_قسم(interaction: discord.Interaction, اسم: str):
+    global config
     config = load_config()
-    if not config["الاقسام"]:
-        return await interaction.response.send_message("مافيه أقسام مضافة", ephemeral=True)
-    desc = "\n".join([f"**{k}**: روم <#{v['روم']}> | {v['وقت']} | {'مفعل' if v['مفعل'] else 'موقوف'}" for k,v in config["الاقسام"].items()])
-    embed = discord.Embed(title="الأقسام الحالية", description=desc, color=0x2ecc71)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if اسم not in config['الاقسام']:
+        await interaction.response.send_message("القسم غير موجود!", ephemeral=True)
+        return
+    
+    del config['الاقسام'][اسم]
+    save_config(config)
+    await interaction.response.send_message(f"تم حذف قسم {اسم} ✅\nملف `data/{اسم}.txt` ما انحذف", ephemeral=True)
 
-@bot.tree.command(name="اضافة", description="إضافة نص لقسم معين")
-@app_commands.describe(قسم="اسم القسم", النص="المحتوى المراد إضافته")
-async def add_quote(interaction: discord.Interaction, قسم: str, النص: str):
+@bot.tree.command(name="الاقسام", description="عرض كل الأقسام")
+async def الاقسام(interaction: discord.Interaction):
+    global config
     config = load_config()
-    if قسم not in config["الاقسام"]:
-        return await interaction.response.send_message("القسم غير موجود", ephemeral=True)
-    with open(f"{DATA_PATH}/{قسم}.txt", 'a', encoding='utf-8') as f:
-        f.write(f"\n{النص}")
-    await interaction.response.send_message(f"تمت الإضافة لقسم {قسم} ✅", ephemeral=True)
+    
+    if not config['الاقسام']:
+        await interaction.response.send_message("مافي أقسام حالياً", ephemeral=True)
+        return
+    
+    msg = "**الأقسام الحالية:**\n"
+    for name, data in config['الاقسام'].items():
+        msg += f"• **{name}** - {data['time']} - <#{data['channel_id']}>\n"
+    
+    await interaction.response.send_message(msg, ephemeral=True)
 
-@bot.tree.command(name="معاينة", description="معاينة شكل الإرسال لقسم")
+@bot.tree.command(name="معاينة", description="معاينة رسالة عشوائية من قسم")
 @app_commands.describe(قسم="اسم القسم")
-async def preview(interaction: discord.Interaction, قسم: str):
+async def معاينة(interaction: discord.Interaction, قسم: str):
+    global config
     config = load_config()
-    if قسم not in config["الاقسام"]:
-        return await interaction.response.send_message("القسم غير موجود", ephemeral=True)
-    await interaction.response.defer(ephemeral=True)
-    await send_section(قسم)
-    await interaction.followup.send("تم الإرسال للمعاينة ✅", ephemeral=True)
+    
+    if قسم not in config['الاقسام']:
+        await interaction.response.send_message("القسم غير موجود!", ephemeral=True)
+        return
+    
+    messages = get_messages(قسم)
+    if not messages:
+        await interaction.response.send_message("مافي رسائل في هذا القسم", ephemeral=True)
+        return
+    
+    msg = random.choice(messages)
+    data = config['الاقسام'][قسم]
+    color = int(str(data['color']).replace('#', ''), 16)
+    embed = discord.Embed(title=data['title'], description=msg, color=color)
+    embed.set_footer(text="معاينة فقط")
+    
+    view = ReactButton() if config['تفعيل_زر_التفاعل'] else None
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+@bot.tree.command(name="اضافة", description="اضافة رسالة لقسم")
+@app_commands.describe(قسم="اسم القسم", نص="نص الرسالة")
+async def اضافة(interaction: discord.Interaction, قسم: str, نص: str):
+    if not os.path.exists('data'):
+        os.makedirs('data')
+    
+    with open(f'data/{قسم}.txt', 'a', encoding='utf-8') as f:
+        f.write(f"\n{نص}")
+    
+    await interaction.response.send_message(f"تمت الإضافة لقسم {قسم} ✅", ephemeral=True)
 
 bot.run(TOKEN)

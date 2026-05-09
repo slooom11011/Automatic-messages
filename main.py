@@ -4,6 +4,7 @@ from discord.ext import tasks
 import json
 import random
 import os
+from collections import deque # منع التكرار
 from datetime import datetime
 import pytz
 
@@ -11,15 +12,17 @@ import pytz
 TOKEN = os.getenv("TOKEN")
 CONFIG_FILE = "config.json"
 TZ = pytz.timezone('Asia/Riyadh')
+IMAGE_HISTORY_LIMIT = 180 # منع التكرار: عدد الصور قبل ما نسمح بالتكرار
 
 intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-# ========== ذاكرة البوت للرسائل والصور ==========
+# ========== ذاكرة البوت ==========
 CACHE = {
     "رسائل": {},
-    "صور": {}
+    "صور": {},
+    "تاريخ_الصور": {} # منع التكرار: نخزن هنا آخر الصور المرسلة
 }
 
 # ========== تحميل الكونفيق ==========
@@ -36,7 +39,7 @@ config = load_config()
 # ========== تحميل الملفات للذاكرة ==========
 def reload_cache():
     global CACHE
-    CACHE = {"رسائل": {}, "صور": {}}
+    CACHE = {"رسائل": {}, "صور": {}, "تاريخ_الصور": {}}
     config = load_config()
 
     for قسم_اسم, data in config["الاقسام"].items():
@@ -55,6 +58,9 @@ def reload_cache():
         except:
             CACHE["صور"][قسم_اسم] = []
             print(f"ملف {data['images_file']} غير موجود")
+        
+        # منع التكرار: ننشئ قائمة تاريخ فارغة لكل قسم
+        CACHE["تاريخ_الصور"][قسم_اسم] = deque(maxlen=IMAGE_HISTORY_LIMIT)
 
     return CACHE
 
@@ -78,7 +84,27 @@ class ReactButton(discord.ui.View):
 
         await interaction.response.send_message("تم تسجيل تفاعلك ❤️", ephemeral=True)
 
-# ========== دالة بناء الامبد - معدل للبنر 1200x600 ==========
+# ========== دالة اختيار صورة بدون تكرار ==========
+def get_unique_image(قسم_اسم):
+    صور_القسم = CACHE["صور"].get(قسم_اسم, [])
+    if not صور_القسم:
+        return "https://images.unsplash.com/photo-1564769625392-651b9e1e2a8a?w=1200&h=600&fit=crop"
+
+    تاريخ_القسم = CACHE["تاريخ_الصور"][قسم_اسم]
+    
+    # الصور المتاحة = كل الصور - الصور اللي انرسلت آخر 180 مرة
+    صور_متاحة = [صورة for صورة in صور_القسم if صورة not in تاريخ_القسم]
+
+    # لو كل الصور انرسلت وخلصت، نفضي التاريخ ونبدأ من جديد
+    if not صور_متاحة:
+        صور_متاحة = صور_القسم
+        تاريخ_القسم.clear()
+
+    صورة_مختارة = random.choice(صور_متاحة)
+    تاريخ_القسم.append(صورة_مختارة) # نضيفها للتاريخ
+    return صورة_مختارة
+
+# ========== دالة بناء الامبد ==========
 def build_embed(قسم_اسم, data, message):
     embed = discord.Embed(
         title=f"**{data['title']}**",
@@ -87,19 +113,14 @@ def build_embed(قسم_اسم, data, message):
         timestamp=datetime.now(TZ)
     )
 
-    # اختيار صورة عشوائية من الذاكرة - بنر كبير 1200x600
-    صور_القسم = CACHE["صور"].get(قسم_اسم, [])
-    if صور_القسم:
-        embed.set_image(url=random.choice(صور_القسم)) # هذا التعديل
-    else:
-        # صورة افتراضية بنفس المقاس
-        embed.set_image(url="https://images.unsplash.com/photo-1564769625392-651b9e1e2a8a?w=1200&h=600&fit=crop")
+    # منع التكرار: نستخدم الدالة الجديدة
+    embed.set_image(url=get_unique_image(قسم_اسم))
 
     embed.set_footer(
         text="رسائل تلقائية • بوت الخواطر",
         icon_url=bot.user.avatar.url if bot.user.avatar else None
     )
-    embed.add_field(name="\u200b", value="▬▬", inline=False)
+    embed.add_field(name="\u200b", value="▬▬▬", inline=False)
     return embed
 
 # ========== دالة الارسال ==========
@@ -203,7 +224,7 @@ async def ارسل_الان(interaction: discord.Interaction, قسم: str):
 @bot.event
 async def on_ready():
     await tree.sync()
-    bot.add_view(ReactButton()) # عشان الزر يشتغل بعد الريستارت
+    bot.add_view(ReactButton())
     print(f"تم تسجيل الدخول باسم {bot.user}")
     daily_sender.start()
 

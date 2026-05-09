@@ -78,7 +78,7 @@ class ReactButton(discord.ui.View):
 
         await interaction.response.send_message("تم تسجيل تفاعلك ❤️", ephemeral=True)
 
-# ========== دالة بناء الامبد ==========
+# ========== دالة بناء الامبد - معدل للبنر 1200x600 ==========
 def build_embed(قسم_اسم, data, message):
     embed = discord.Embed(
         title=f"**{data['title']}**",
@@ -87,18 +87,19 @@ def build_embed(قسم_اسم, data, message):
         timestamp=datetime.now(TZ)
     )
 
-    # اختيار صورة عشوائية من الذاكرة
+    # اختيار صورة عشوائية من الذاكرة - بنر كبير 1200x600
     صور_القسم = CACHE["صور"].get(قسم_اسم, [])
     if صور_القسم:
-        embed.set_thumbnail(url=random.choice(صور_القسم))
+        embed.set_image(url=random.choice(صور_القسم)) # هذا التعديل
     else:
-        embed.set_thumbnail(url="https://i.imgur.com/1Q9Z1Zm.png") # صورة افتراضية
+        # صورة افتراضية بنفس المقاس
+        embed.set_image(url="https://images.unsplash.com/photo-1564769625392-651b9e1e2a8a?w=1200&h=600&fit=crop")
 
     embed.set_footer(
         text="رسائل تلقائية • بوت الخواطر",
         icon_url=bot.user.avatar.url if bot.user.avatar else None
     )
-    embed.add_field(name="\u200b", value="▬▬▬▬", inline=False)
+    embed.add_field(name="\u200b", value="▬▬", inline=False)
     return embed
 
 # ========== دالة الارسال ==========
@@ -202,6 +203,7 @@ async def ارسل_الان(interaction: discord.Interaction, قسم: str):
 @bot.event
 async def on_ready():
     await tree.sync()
+    bot.add_view(ReactButton()) # عشان الزر يشتغل بعد الريستارت
     print(f"تم تسجيل الدخول باسم {bot.user}")
     daily_sender.start()
 

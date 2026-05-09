@@ -15,16 +15,18 @@
       "channel_id": 1502664103825768509,
       "time": "05:00",
       "file": "data/ديني.txt",
+      "images_file": "data/صور_ديني.txt",
       "mentions": "none",
       "button_label": "تفاعل ❤️",
-      "color": "#00FF00",
+      "color": "#00A86B",
       "title": "🌅 رسالة الفجر"
     },
     "خواطر": {
       "channel_id": 1502663820202479796,
       "time": "08:00",
       "file": "data/خواطر.txt",
-      "mentions": "none", 
+      "images_file": "data/صور_خواطر.txt",
+      "mentions": "none",
       "button_label": "تفاعل ❤️",
       "color": "#3498DB",
       "title": "☀️ خاطرة الصباح"
